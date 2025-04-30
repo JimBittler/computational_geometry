@@ -146,24 +146,39 @@ def test_polyline_intersect():
 
 def test_offsets():
     # Generate data
-    xy = generate_xy_data(type=1, qty=2 ** 10, param=1.5)
+    xy = generate_xy_data(type=1, qty=2 ** 5, param=1.5)
+    tr = generate_tr_data(type=1, qty=2 ** 5, param=1.5)
+
+    off_dir = 0.1
 
     # Start timer
     t_val = time.perf_counter()
 
     # Calculate offset
-    oo = cg.offset_cart(xy, -0.1)
+    oc = cg.offset_cart(xy, off_dir)
 
     # Stop timer and print
     t_val -= time.perf_counter()
-    print(f"offset runtime: {-1 * t_val:5.6f} [s]")
+    print(f"cartesian offset runtime: {-1 * t_val:5.6f} [s]")
+
+    # Start timer
+    t_val = time.perf_counter()
+
+    # Calculate offset
+    op = cg.offset_polar(tr, off_dir, miter_threshold=0.5 * np.pi)
+    op = op[1, :] * np.array((np.cos(op[0, :]), np.sin(op[0, :])), dtype=float)
+
+    # Stop timer and print
+    t_val -= time.perf_counter()
+    print(f"polar offset runtime: {-1 * t_val:5.6f} [s]")
+
 
     plt.plot(xy[0, 0], xy[1, 0], color='tab:blue', marker='o', markersize=10, markerfacecolor='None')
     plt.plot(xy[0, :], xy[1, :], color='tab:blue', linewidth=4)
-    plt.plot(oo[0, :], oo[1, :], color='tab:red', linewidth=4)
+    plt.plot(oc[0, :], oc[1, :], color='tab:red', linewidth=4)
+    plt.plot(op[0, :], op[1, :], color='tab:green', linewidth=2)
     plt.axis('equal')
     plt.show()
-
 
 def test_curvature():
     xy = generate_xy_data(5, qty=2**8)

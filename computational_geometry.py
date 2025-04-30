@@ -49,7 +49,7 @@ def line_segment_y_value(x: float,
 # ----------------------------------------------------------------------------------------------------------------------
 def polyline_intersect_naive(xy: np.ndarray) -> tuple[np.ndarray, list[tuple[int, int]]]:
     """
-    Find locations where a polyline intersects itself using brute force algorithm. Time complexity is O(n^).
+    Find locations where a polyline intersects itself using brute force algorithm. Time complexity is O(n^2).
     :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
     :return: a [2xm] array of cartesian coordinate pairs representing intersections, and a list segment indices which contain the intersections
     """
@@ -105,7 +105,7 @@ def polyline_intersect_naive(xy: np.ndarray) -> tuple[np.ndarray, list[tuple[int
 def offset_cart(xy: np.ndarray, dist: float=1.0) -> np.ndarray:
     """
     Generate polyline offset
-    :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
+    :param xy: a [2xn] array of cartesian coordinate pairs, [xi, yi], representing vertices of a polyline
     :param dist: distance of offset; positive offsets to the "right", negative to the "left"
     :return: [2xn] array of cartesian coordinate pairs representing vertices of offset polyline
     """
@@ -131,6 +131,147 @@ def offset_cart(xy: np.ndarray, dist: float=1.0) -> np.ndarray:
     nn *= ss
 
     return xy + dist * nn
+
+def offset_polar(tr: np.ndarray, dist: float=1.0, miter_threshold: float=np.inf) -> np.ndarray:
+    """
+    Curve offsetting algorithm for polyline represented in polar coordinates.
+    Assume input curve is ordered ascending in Θ.
+    Intersections of offset at interior corners or with original curve are not managed
+    :param tr: a [2xn] array of polar coordinate pairs, [Θi, ri], representing vertices of a polyline
+    :param dist: distance of offset; positive offsets to the "right", negative to the "left"
+    :param miter_threshold: bisector angles greater than this threshold will be mitered
+    :return: [2xn] array of polar coordinate pairs representing vertices of offset polyline
+    """
+
+    # Definitions
+    # ----------------
+    # Given a set of ordered points in polar coordinates, where the ith point is
+    #   pi = [Θi, ri]
+    # Where necessary, subscripts are contained within braces
+    #   p{i+1} = [Θ{i+1}, r{i+1}]
+    # Define a line segment with beginning and end points as
+    #   Si = Bi→Ei
+    # Where ends of line segments in polar coordinates are defined as
+    #   Bi = pi = [Θi, ri]
+    #   Ei = p{i+1} = [Θ{i+1}, r{i+1}] = B{i+1}
+    # Segment i defines a triangle with edges Ai, Bi, Ci, where
+    #   O: Origin
+    #   Ai: O→Bi
+    #   Bi: O→Ei = O→B{i+1}] = A{i+1}
+    #   Ci: Bi→Ei = Si
+    # Interior angles opposite edges Ai, Ci, Bi defined as ai, ci, bi, respectively
+
+    # direction to offset; -1 is inward, toward decreasing r, and +1 is outward, toward increasing r
+    dir = np.sign(dist)
+
+    # Initial Triangle
+    # ----------------
+    # Side lengths Ai and Bi are known a priori.
+    #   Ai = ri
+    #   Bi = r(i+1) = A(i+1)
+    A = tr[1, :-1]
+    B = tr[1, 1:]
+
+    # Interior angle ci can be calculated as:
+    #   ci = Θ(i+1) - Θi
+    #   Note: ci is permitted to be negative
+    c = tr[0, 1:] - tr[0, :-1]
+
+    # Bound c in [-π, π]
+    c[c > +np.pi] -= 2 * np.pi
+    c[c < -np.pi] += 2 * np.pi
+
+    # From law of cosines, solve for C:
+    #   C^2 = A^2 + B^2 - 2*A*B*cos(c)
+    #   Note: sign of c is lost
+    C = np.sqrt(A ** 2 + B ** 2 - 2 * A * B * np.cos(c))
+
+    # Invert law of cosines to solve for b
+    #   b = acos((B^2 - A^2 - C^2) / (-2*A*C))
+    #   Note: c < 0 → b < 0
+    b = np.sign(c) * np.acos((B ** 2 - A ** 2 - C ** 2) / (-2 * A * C))
+
+    # Interior angles of triangle must equal π; solve for a:
+    #   a = π - b - c
+    #   Note: if c < 0 → b < 0 → a < 0
+    a = np.sign(c) * np.pi - b - c
+
+    # Angle and magnitude of offset
+    # ----------------
+    # The direction of offset is bisector, d, of the angle between Si and S{i+1}.
+    # Note: if c < 0 → a, b, d < 0
+    d = 0.5 * (a[:-1] + b[1:])
+    d[dir * d > 0] -= dir * np.pi
+
+    # A line along the bisector creates the hypotenuse of a right triangle, for which the base is collinear with Ci,
+    # and its opposite side is perpendicular to Ci, with a length D, the desired offset distance.
+    # The length of the hypotenuse can be solved for with trigonometry
+    #   Hi = D / sin(d)
+    H = abs(dist / np.sin(d))  # Does dropping the sign lose information?
+
+    # Polar coordinates of offset point
+    # ----------------
+    # We seek the polar coordinates of the beginning point of the hypotenuse above
+    #   Hi = Bi→Ei = pi*→p{i+1} = [Θ*, r*]→[Θ{i+1}, r{i+1}]
+    # There exists a triangle Qi, Hi, Bi where
+    #   Qi = O→pi*
+    # if dir == -1:
+    #     # The interior angle q is angle a less the bisector
+    #     q = a[:-1] - d
+    # else:
+    #     # The interior angle q is the compliment of angle a plus the bisector
+    #     q = 2 * np.pi - (a[:-1] + d)
+
+    # Note if c < 0 → q might be less than zero
+    q = d - a[:-1]
+
+    # Bound q in [-π, π]
+    q[q > +np.pi] -= 2 * np.pi
+    q[q < -np.pi] += 2 * np.pi
+
+
+    # Manage Extreme Angles, work in progress
+    # --------------------------------
+    # this_idx = np.where(abs(abs(d) - 0.5 * np.pi) > 0.1)[0] # old condition; not sure about this one
+    this_idx = np.where(np.logical_or.reduce((
+        abs(d) > miter_threshold,
+        abs(d) < np.pi - miter_threshold
+    )))[0]
+
+    # half the bisector + π/4
+    g = 0.5 * d[this_idx] + dir * 0.25 * np.pi
+
+    # New hypotenuse and interior angle
+    H[this_idx] = abs(dist / np.cos(g))
+    q[this_idx] += g
+
+    # insert an additional point
+    tr = np.insert(tr, this_idx + 1, tr[:, this_idx + 1], axis=1)
+    B = np.insert(B, this_idx + 0, B[this_idx])
+    H = np.insert(H, this_idx + 0, H[this_idx])
+
+    q = np.insert(q, this_idx + 0, q[this_idx] - 2 * g)
+
+    # Bound q in [-π, π]
+    q[q > +np.pi] -= 2 * np.pi
+    q[q < -np.pi] += 2 * np.pi
+
+    # Solve for offset points
+    # --------------------------------
+    # From law of cosines, solve for Qi, which is r*:
+    # Note: sign of q is lost
+    Q = np.sqrt(B[:-1] ** 2 + H ** 2 - 2 * B[:-1] * H * np.cos(q))
+
+    # Invert law of cosines to solve for h; round away numerical errors
+    h = np.sign(q) * np.acos(np.round((H ** 2 - B[:-1] ** 2 - Q ** 2) / (-2 * B[:-1] * Q), 6))
+
+    # Calculate Θ* (reuse variable h)
+    h += tr[0, 1:-1]
+
+    # Convert to numpy array and return
+    oo = np.stack((h, Q), axis=0)
+
+    return oo
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Polyline modifications, calculations, comparisons, etc.
