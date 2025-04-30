@@ -7,12 +7,16 @@ import computational_geometry as cg
 
 
 def main():
-    test_flag = 1
+    test_flag = 3
 
     if test_flag == 0:
         test_line_segment_y_value()
     elif test_flag == 1:
         test_polyline_intersect()
+    elif test_flag == 2:
+        test_curvature()
+    elif test_flag == 3:
+        test_offsets()
     else:
         for idx in range(4):
             xy = generate_xy_data(idx, param=2)
@@ -22,7 +26,6 @@ def main():
         plt.ylim((-2, 2))
 
         plt.show()
-
 
 def generate_xy_data(type: int=0, qty: int=128, param: float=1.0) -> np.ndarray:
     tt_ini = 0
@@ -66,6 +69,10 @@ def generate_xy_data(type: int=0, qty: int=128, param: float=1.0) -> np.ndarray:
             (-3, 1)
         )
         xy = np.array(xy, dtype=float).T
+
+    # Circle
+    elif type == 5:
+        xy = 1 * np.array((np.cos(tt), np.sin(tt)), dtype=float)
 
     # Simple Line
     else:
@@ -137,7 +144,40 @@ def test_polyline_intersect():
     plt.plot(insct[0, :], insct[1, :], linestyle='', marker='.', markersize=10)
     plt.show()
 
+def test_offsets():
+    # Generate data
+    xy = generate_xy_data(type=1, qty=2 ** 10, param=1.5)
 
+    # Start timer
+    t_val = time.perf_counter()
+
+    # Calculate offset
+    oo = cg.offset_cart(xy, -0.1)
+
+    # Stop timer and print
+    t_val -= time.perf_counter()
+    print(f"offset runtime: {-1 * t_val:5.6f} [s]")
+
+    plt.plot(xy[0, 0], xy[1, 0], color='tab:blue', marker='o', markersize=10, markerfacecolor='None')
+    plt.plot(xy[0, :], xy[1, :], color='tab:blue', linewidth=4)
+    plt.plot(oo[0, :], oo[1, :], color='tab:red', linewidth=4)
+    plt.axis('equal')
+    plt.show()
+
+
+def test_curvature():
+    xy = generate_xy_data(5, qty=2**8)
+    k = cg.curvature_numeric(xy)
+
+    fig_1, axs = plt.subplots(nrows=1, ncols=2)
+
+    axs[0].plot(xy[0, :], xy[1, :])
+    axs[0].set_aspect('equal')
+
+    axs[1].plot(k)
+    axs[1].axhline(0, color='k', alpha=0.5)
+
+    plt.show()
 
 if __name__ == '__main__':
     main()

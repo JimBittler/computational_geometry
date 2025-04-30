@@ -99,9 +99,42 @@ def polyline_intersect_naive(xy: np.ndarray) -> tuple[np.ndarray, list[tuple[int
     return np.array(intersections, dtype=float).T, indices
 
 # ----------------------------------------------------------------------------------------------------------------------
-# Polyline modifications, calculations, comparisons, etc.
+# Offsets
 # ----------------------------------------------------------------------------------------------------------------------
 
+def offset_cart(xy: np.ndarray, dist: float=1.0) -> np.ndarray:
+    """
+    Generate polyline offset
+    :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
+    :param dist: distance of offset; positive offsets to the "right", negative to the "left"
+    :return: [2xn] array of cartesian coordinate pairs representing vertices of offset polyline
+    """
+    # Forward differences, normalized
+    dx = np.diff(xy, axis=1)
+    dx /= np.hypot(dx[0, :], dx[1, :])
+    dx = np.concatenate((dx[:, 0][:, None], dx, dx[:, -1][:, None]), axis=1)
+
+    # Vector normal to forward gradient, normalized
+    nf = np.array((dx[1, 1:], -1 * dx[0, 1:]), dtype=float)
+
+    # Vector normal to backward gradient, normalized
+    nb = np.array((dx[1, :-1], -1 * dx[0, :-1]), dtype=float)
+
+    # dot product of normals (dp), angle between (aa), and scaling factor (ss)
+    dp = (nf * nb).sum(axis=0)
+    aa = np.acos(dp)
+    ss = 1 / np.cos(0.5 * aa)
+
+    # Offset direction
+    nn = nf + nb
+    nn /= np.hypot(nn[0, :], nn[1, :])
+    nn *= ss
+
+    return xy + dist * nn
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Polyline modifications, calculations, comparisons, etc.
+# ----------------------------------------------------------------------------------------------------------------------
 def polyline_trim_loops(xy: np.ndarray) -> np.ndarray:
     """
     Find loops within a polyline and remove them.
@@ -120,5 +153,31 @@ def polyline_trim_loops(xy: np.ndarray) -> np.ndarray:
         xy = np.delete(xy, slice(this_insct_idx[0] + 1, this_insct_idx[1]), 1)
         xy[:, this_insct_idx[0] + 1] = insct_xy[:, -that_idx - 1]
 
-
     return xy
+
+def curvature_numeric(xy: np.ndarray) -> np.ndarray:
+    """
+    Find curvature of a polyline numerically
+    :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
+    :return: an [n] element vector containing numeric value polyline curvature
+    """
+
+    # line parameter
+    dt = ((xy[0, 1:] - xy[0, :-1]) ** 2 + (xy[1, 1:] - xy[1, :-1]) ** 2) ** 0.5
+
+    # First derivative, central difference
+    dx = (xy[0, 2:] - xy[0, :-2]) / (dt[1:] + dt[:-1])
+    dy = (xy[1, 2:] - xy[1, :-2]) / (dt[1:] + dt[:-1])
+
+    # Second derivative, central difference
+    ddx = (xy[0, 2:] - 2 * xy[0, 1:-1] + xy[0, :-2]) / (dt[1:] * dt[:-1])
+    ddy = (xy[1, 2:] - 2 * xy[1, 1:-1] + xy[1, :-2]) / (dt[1:] * dt[:-1])
+
+    # Radius of curvature
+    # https://en.wikipedia.org/wiki/Radius_of_curvature#In_two_dimensions
+    k = (dx * ddy - dy * ddx) / ((dx ** 2 + dy ** 2) ** 1.5)
+
+    # Pad values to maintain original array shape
+    k = np.pad(k, (0, 2), mode='constant', constant_values=k[-1])
+
+    return k
