@@ -1,4 +1,5 @@
 import time
+import cProfile
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,7 +8,7 @@ import computational_geometry as cg
 
 
 def main():
-    test_flag = 3
+    test_flag = 5
 
     if test_flag == 0:
         test_line_segment_y_value()
@@ -17,13 +18,20 @@ def main():
         test_curvature()
     elif test_flag == 3:
         test_offsets()
+    elif test_flag == 4:
+        test_circle_polyline_intersect()
+    elif test_flag == 5:
+        test_polyline_boundary()
     else:
-        for idx in range(4):
-            xy = generate_xy_data(idx, param=2)
-            plt.plot(xy[0, :], xy[1, :])
+        # for idx in range(4):
+        #     xy = generate_xy_data(idx, param=2)
+        #     plt.plot(xy[0, :], xy[1, :])
+
+        xy = generate_xy_data(6, param=2)
+        plt.plot(xy[0, :], xy[1, :])
         plt.axis('equal')
-        plt.xlim((-2, 2))
-        plt.ylim((-2, 2))
+        # plt.xlim((-2, 2))
+        # plt.ylim((-2, 2))
 
         plt.show()
 
@@ -73,6 +81,20 @@ def generate_xy_data(type: int=0, qty: int=128, param: float=1.0) -> np.ndarray:
     # Circle
     elif type == 5:
         xy = 1 * np.array((np.cos(tt), np.sin(tt)), dtype=float)
+
+    # Another Arbitrary Curve
+    elif type == 6:
+        xy = (
+            (1, 0),
+            (0, 1),
+            (3, 1),
+            (2, 0),
+            (5, 0),
+            (4, 1),
+            (7, 1),
+            (6, 0)
+        )
+        xy = np.array(xy, dtype=float).T
 
     # Simple Line
     else:
@@ -124,7 +146,7 @@ def test_polyline_intersect():
     t_val = time.perf_counter()
 
     # Run bruteforce algorithm
-    insct, _ = cg.polyline_intersect_naive(xy)
+    insct, _ = cg.polyline_self_intersect_naive(xy)
 
     # Stop timer and print
     t_val -= time.perf_counter()
@@ -143,6 +165,68 @@ def test_polyline_intersect():
     plt.plot(xy_trim[0, :], xy_trim[1, :])
     plt.plot(insct[0, :], insct[1, :], linestyle='', marker='.', markersize=10)
     plt.show()
+
+def test_circle_polyline_intersect():
+    # Generate data, curve
+    xy = generate_xy_data(type=3, qty=2 ** 7, param=1.5)
+
+    # Generate data, circle
+    center = np.array((-0.2, 0.2), dtype=float)
+    radius = 0.7
+    theta = np.linspace(0, 2 * np.pi, 2 ** 7)
+    circle_xy = radius * np.array((np.cos(theta), np.sin(theta)), dtype=float) + center[:, None]
+
+    # Start timer
+    t_val = time.perf_counter()
+
+    # Find intersections
+    insct = cg.polyline_circle_intersect(xy, center, radius)
+
+    # Stop timer and print
+    t_val -= time.perf_counter()
+    print(f"runtime: {-1 * t_val:5.3f} [s]")
+
+    # Handle curves with no intersections
+    if insct.size == 0:
+        insct = np.empty((2, 2))
+        insct[:] = np.nan
+
+    # Visualize
+    plt.plot(circle_xy[0, :], circle_xy[1, :], color='tab:orange', alpha=0.5)
+    plt.plot(xy[0, :], xy[1, :], color='tab:blue', linewidth=4)
+    plt.plot(insct[0, :], insct[1, :], color='tab:red', linestyle='', marker='.', markersize=10)
+    plt.show()
+
+def test_polyline_boundary():
+    # Generate data, curve
+    xy = generate_xy_data(type=4, qty=2 ** 10, param=1.5)
+
+    test_qty = 1
+    t_tot = 0.0
+
+    for _ in range(test_qty):
+        # Start timer
+        t_val = time.perf_counter()
+
+        # find upper bound
+        ub = cg.polyline_boundary(xy, upper=False)
+
+        # Stop timer and add to total
+        t_tot += time.perf_counter() - t_val
+
+    # Print average
+    print(f"average runtime over {test_qty} runs: {t_tot/test_qty:7.5f} [s]")
+
+    # Visualize
+    mrk = '.'
+    plt.plot(xy[0, :], xy[1, :], linewidth=2 ** 2, marker=mrk, markersize=2 ** 4)
+    plt.plot(ub[0, :], ub[1, :], marker=mrk)
+    plt.axis('equal')
+    plt.show()
+
+    cProfile.runctx("func(in1, in2)", globals={"func": cg.polyline_boundary, "in1": xy, "in2": False}, locals={})
+
+
 
 def test_offsets():
     # Generate data

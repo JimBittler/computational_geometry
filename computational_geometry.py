@@ -47,10 +47,10 @@ def line_segment_y_value(x: float,
 # ----------------------------------------------------------------------------------------------------------------------
 # Intersections
 # ----------------------------------------------------------------------------------------------------------------------
-def polyline_intersect_naive(xy: np.ndarray) -> tuple[np.ndarray, list[tuple[int, int]]]:
+def polyline_self_intersect_naive(xy: np.ndarray) -> tuple[np.ndarray, list[tuple[int, int]]]:
     """
     Find locations where a polyline intersects itself using brute force algorithm. Time complexity is O(n^2).
-    :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
+    :param xy: a [2xn] array of cartesian coordinate pairs, [x, y], representing vertices of a polyline
     :return: a [2xm] array of cartesian coordinate pairs representing intersections, and a list segment indices which contain the intersections
     """
     # Create lists
@@ -97,6 +97,136 @@ def polyline_intersect_naive(xy: np.ndarray) -> tuple[np.ndarray, list[tuple[int
                     indices.append((idx_i, idx_j + idx_k))
 
     return np.array(intersections, dtype=float).T, indices
+
+def polyline_circle_intersect(xy: np.ndarray, c: np.ndarray, r: float) -> np.ndarray:
+    """
+    Find the intersections between an arbitrary polyline and a circle
+    :param xy: a [2xn] array of cartesian coordinate pairs, [x, y], representing vertices of a polyline
+    :param c: coordinates of circle center, [x, y]
+    :param r: circle radius
+    :return: a [2xm] array of cartesian coordinate pairs, [x, y], representing intersections between the circle and polyline
+    """
+    # Get index of points which are within the bounding box of the circle, excluding curve endpoints
+    this_idx = np.where(np.logical_and.reduce((
+        xy[0, :] >= c[0] - r,
+        xy[0, :] <= c[0] + r,
+        xy[1, :] >= c[1] - r,
+        xy[1, :] <= c[1] + r
+    )))[0]
+
+    # If no points in bounding box, return NaN
+    if len(this_idx) == 0:
+        return np.array(((np.nan,), (np.nan,)))
+
+    # Get index of point which are within the circle
+    this_idx = this_idx[((xy[0, this_idx] - c[0]) ** 2 + (xy[1, this_idx] - c[1]) ** 2) <= (r ** 2)]
+
+    # If no points in circle, return NaN
+    if len(this_idx) == 0:
+        return np.array(((np.nan,), (np.nan,)))
+
+    # Get index of segments which cross circle
+    that_idx = np.where(np.diff(this_idx) != 1)[0]
+
+    # Instantiate segment list
+    s = []
+
+    # Include first interior segment start and end point indices, unless it is the initial point of xy
+    if this_idx[0] != 0:
+        s = [(this_idx[0] - 1, this_idx[0])]
+
+    # Get all other segment start and end point indices
+    for ii in that_idx:
+        s.append((this_idx[ii], this_idx[ii] + 1))
+        s.append((this_idx[ii + 1] - 1, this_idx[ii + 1]))
+
+    # Include final interior segment start and end point indices, unless it is the final point of xy
+    if this_idx[-1] != xy.shape[1] - 1:
+        s.append((this_idx[-1], this_idx[-1] + 1))
+
+    # If no segments cross circle, return NaN
+    if len(s) == 0:
+        return np.array(((np.nan,), (np.nan,)))
+
+    # VECTORIZE!
+    ss = np.array(s).T
+
+    # segment length along x and y axis
+    dx = xy[0, ss[1, :]] - xy[0, ss[0, :]]
+    dy = xy[1, ss[1, :]] - xy[1, ss[0, :]]
+
+    # segment length squared
+    rr = dx ** 2 + dy ** 2
+
+    # Determinant of transformation matrix A
+    # where A maps unit vectors with tails at circle center to
+    # segment end points, with respect to circle center
+    # A := [[s0x, s1x], [s0y, s1y]] - [[cx], [cy]]
+    # |A| = ((s0x - cx) * (s1y - cy)) - ((s1x - cx) * (s0y - cy))
+    dd = ((xy[0, ss[0, :]] - c[0]) * (xy[1, ss[1, :]] - c[1]) -
+          (xy[0, ss[1, :]] - c[0]) * (xy[1, ss[0, :]] - c[1]))
+
+    # Line circle intersection (-) w.r.t. circle center
+    # https://mathworld.wolfram.com/Circle-LineIntersection.html
+    xx = (dd * dy - (2 * (dy >= 0) - 1) * dx * np.sqrt(r ** 2 * rr - dd ** 2)) / rr
+    yy = (-dd * dx - abs(dy) * np.sqrt(r ** 2 * rr - dd ** 2)) / rr
+
+    # Check if the calculated intersection (-) is not contained within the line
+    # parametric equation of a line:
+    #   x = x0 + t * (xf - x0)  [1]
+    #   y = y0 + t * (yf - y0)  [2]
+    #   where t is in [0, 1]
+    # If (xf - x0) == 0, i.e. a vertical line, solve for t using equation [2]
+    # else solve for t using equation [1]
+
+    # A small number
+    epsilon = 1e-2  # ε = 0.001 → intersection is within a distance of 0.1% segment length from segment end points
+
+    # Find dx ~= 0
+    dx_is_zero = np.array((np.abs(dx) - epsilon < 0), dtype=bool)
+
+    # Initialize boolean mask classifying if an intersection is within the line
+    int_in_line = np.zeros_like(dx, dtype=bool)
+
+    # Wherever dx == 0, use eq. [2] to solve for t
+    # If t is in [0, 1], it is within the line segment
+    # NOTE: Beware floating point error
+    if dx_is_zero.any():
+        int_in_line[dx_is_zero] = np.logical_and(
+            (yy[dx_is_zero] + c[1] - xy[1, ss[0, dx_is_zero]]) / dy[dx_is_zero] >= -epsilon,
+            (yy[dx_is_zero] + c[1] - xy[1, ss[0, dx_is_zero]]) / dy[dx_is_zero] <= 1 + epsilon
+        )
+
+    # Wherever dx != 0, use eq. [1] to solve for t
+    # If t is in [0, 1], it is within the line segment
+    if (~dx_is_zero).any():
+        int_in_line[~dx_is_zero] = np.logical_and(
+            (xx[~dx_is_zero] + c[0] - xy[0, ss[0, ~dx_is_zero]]) / dx[~dx_is_zero] >= -epsilon,
+            (xx[~dx_is_zero] + c[0] - xy[0, ss[0, ~dx_is_zero]]) / dx[~dx_is_zero] <= 1 + epsilon
+        )
+
+
+    # If the intersection (-) is not within the segment, intersection (+) must be
+    # Recall, a line segment will intersect with at circle 0, 1, or 2 real locations
+    # All segments which do not intersect the center have already been eliminated
+    # Recalculate appropriate intersections
+    if (~int_in_line).any():
+        xx[~int_in_line] = ((dd[~int_in_line] * dy[~int_in_line] +
+                         (2 * (dy[~int_in_line] >= 0) - 1) * dx[~int_in_line] *
+                         np.sqrt(r ** 2 * rr[~int_in_line] - dd[~int_in_line] ** 2)) / rr[~int_in_line])
+        yy[~int_in_line] = ((-dd[~int_in_line] * dx[~int_in_line] +
+                         abs(dy[~int_in_line]) *
+                         np.sqrt(r ** 2 * rr[~int_in_line] - dd[~int_in_line] ** 2)) / rr[~int_in_line])
+
+    # Shift intersections to global frame
+    # Intersections were calculated w.r.t. circle center
+    xx += c[0]
+    yy += c[1]
+
+    # assemble and return numpy array
+    cc = np.array((xx, yy))
+
+    return cc
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Offsets
@@ -284,7 +414,7 @@ def polyline_trim_loops(xy: np.ndarray) -> np.ndarray:
     :return:  a [2xn] array of cartesian coordinate pairs representing vertices of the trimmed polyline
     """
     # Get intersections (slow!)
-    insct_xy, insct_idx = polyline_intersect_naive(xy)
+    insct_xy, insct_idx = polyline_self_intersect_naive(xy)
 
     # Remove loops by
     # 1) iterating backwards through list segments which contain intersections
@@ -322,3 +452,148 @@ def curvature_numeric(xy: np.ndarray) -> np.ndarray:
     k = np.pad(k, (0, 2), mode='constant', constant_values=k[-1])
 
     return k
+
+def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
+    # TODO: Preprocess - detect intersections
+    # TODO: Optimize
+
+    # Set search index for calls to numpy.argpartition(...)
+    # Upper: find the last element in a sorted array
+    # else: find the first element in the sorted array
+    if upper:
+        kth = -1
+    else:
+        kth = 0
+
+    # a small number
+    # Note: this should be proportional to the input data
+    epsilon = 1e-6
+
+    # Dimension of polyline
+    n_pts = xy.shape[1]
+
+    # Line segment initial and end point indices
+    # s = [s_{0}, s_{1}, ... , s_{n-1}] = [[s_{0,p0}, s_{0,pf}], [s_{1,p0}, s_{1,pf}], ... , [s_{n-1,p0}, s_{n-1,pf}]]
+    # p0 := index of initial point in xy
+    # pf := index of final point in xy
+    # e.g. s[i] = [s_{i,p0}, s_{i,pf}]; ith line segment, s_{i}, which starts at point xy[:, s_{i,p0}] and ends at point xy[:, s_{i,pf}]
+    # Note: initially, this is sequential because input is a polyline
+    # Note: store in an array to make use of Numpy indexing routines
+    # Note: structure could be exploited for optimization: i.e. adjacent segments always share one point
+    s = np.array((np.arange(start=0, stop=n_pts - 1, step=1, dtype=int),
+                  np.arange(start=1, stop=n_pts, step=1, dtype=int)), dtype=int)
+
+    # change in x
+    dx = np.diff(xy[0, :])
+
+    # Check for vertical lines
+    bool_idx = dx == 0
+    if any(bool_idx):
+        # Perturb vertical lines a small amount
+        xy[0, 1:][bool_idx] += epsilon * np.random.rand(np.count_nonzero(bool_idx))
+
+        # Recalculate change in x
+        dx = np.diff(xy[0, :])
+
+    # Identify "backwards" segments, where the final point is to the left of the initial point
+    # Flip the initial point and end point indices of "backwards" segments
+    bool_idx = dx < 0
+    s[:, bool_idx] = np.flip(s[:, bool_idx], axis=0)
+
+    # Get the indices that would sort the polyline by increasing x coordinate
+    p_idx_sort = np.argsort(xy[0, :])
+
+    # # if segments share initial point, sort by end point
+    # for idx, si in enumerate(s[:, :-1].T):
+    #     if si[0] == s[0, idx + 1]:
+    #         if xy[1, si[1]] > xy[1, s[1, idx + 1]]:
+    #             s[:, idx:idx+2] =  np.flip(s[:, idx:idx+2], axis=1)
+
+    # Initialize "status" T; a list of segments which intersect a horizontal sweepline
+    # • The sweepline begins as the left most point
+    # • Assumes there are no vertical lines
+    # • Use a list because items will be added and removed frequetly
+    T = []
+
+    # Add segments which start at the initial point to T
+    # Note: this can be done faster segments are stored in a binary tree
+    T.extend(np.where(s[0, :] == p_idx_sort[0])[0].tolist())
+
+    # Set the active segment - segment which is the bound of the polyline at the sweepline location
+    # • A = s[1, T] : Indices of end points of segments in T
+    # • B = xy[1, A]: y values of end points
+    # • C = np.argpartition(B, kth)[kth]: index of the kth largest value in B
+    # • T[C]: segment in T which is the current boundary of the polyline
+    s_act = T[np.argpartition(xy[1, s[1, T]], kth=kth)[kth]]
+
+    # C: Points which are the bound of the polyline
+    # • Initialize as the left most point
+    # • Use a list because final size is unknown; upperbound is 2*(n-1)
+    C = [(xy[0, p_idx_sort[0]], xy[1, p_idx_sort[0]])]
+
+    # Advance the sweepline
+    for this_idx in p_idx_sort[1:]:
+        # print("====")
+        # print(f"this_idx = {this_idx}")
+        # print("status : ", T)
+        # print(f"s_act: {s_act}")
+
+        # Add next segment(s) to T
+        that_idx = np.where(s[0, :] == this_idx)[0].tolist() # can this be speed up by exploiting polyline structure?
+        if len(that_idx) != 0:
+            if upper:
+                that_idx.insert(len(that_idx), that_idx.pop(np.argpartition(xy[1, s[1, that_idx]], kth=kth)[kth]))
+            else:
+                that_idx.insert(kth, that_idx.pop(np.argpartition(xy[1, s[1, that_idx]], kth=kth)[kth]))
+            T.extend(that_idx)
+
+        # Get max value
+        # • x := sweepline position
+        # • ep0 := initial points of segments in T
+        # • ep1 := final points of segments in T
+        this_y, _ = line_segment_y_value(x=xy[0, this_idx], ep0=xy[:, s[0, T]], ep1=xy[:, s[1, T]])
+
+        # Get the index of kth y value of segments in T at x
+        kth_idx = np.argpartition(this_y, kth=kth)[kth]
+
+        # if new boundary point is NOT on the active segment
+        if T[kth_idx] != s_act:
+            # Transition point from active segment
+            C.append((xy[0, this_idx], this_y[T.index(s_act)]))
+
+            # Set y value of segment endpoints to +/- infinity
+            this_y[s[1, T] == this_idx] = (2 * kth + 1) * np.inf
+
+            # find new active segment
+            kth_idx = np.argpartition(this_y, kth=kth)[kth]
+
+            # Add new point
+            C.append((xy[0, this_idx], this_y[kth_idx]))
+
+            # Update active segment
+            s_act = T[kth_idx]
+
+        # Else if new boundary is on the active segment, and is an end point
+        elif s[1, T[kth_idx]] == this_idx:
+            # Current point
+            C.append((xy[0, this_idx], this_y[kth_idx]))
+
+            # Set y value of segment endpoints to +/- infinity
+            this_y[s[1, T] == this_idx] = (2 * kth + 1) * np.inf
+
+            # find new active segment
+            kth_idx = np.argpartition(this_y, kth=kth)[kth]
+
+            # Add new point
+            C.append((xy[0, this_idx], this_y[kth_idx]))
+
+            # Update active segment
+            s_act = T[kth_idx]
+
+        # Else no action required
+
+        # Remove segment from T if sweepline is at its endpoint
+        T = [si for si in T if s[1, si] != this_idx]
+
+    C = np.array(C, dtype=float).T
+    return C
