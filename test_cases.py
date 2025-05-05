@@ -199,9 +199,10 @@ def test_circle_polyline_intersect():
 
 def test_polyline_boundary():
     # Generate data, curve
-    xy = generate_xy_data(type=4, qty=2 ** 10, param=1.5)
+    n = 2 ** 8
+    xy = generate_xy_data(type=1, qty=n, param=1.5)
 
-    test_qty = 1
+    test_qty = 100
     t_tot = 0.0
 
     for _ in range(test_qty):
@@ -214,18 +215,19 @@ def test_polyline_boundary():
         # Stop timer and add to total
         t_tot += time.perf_counter() - t_val
 
-    # Print average
-    print(f"average runtime over {test_qty} runs: {t_tot/test_qty:7.5f} [s]")
-
-    # Visualize
-    mrk = '.'
-    plt.plot(xy[0, :], xy[1, :], linewidth=2 ** 2, marker=mrk, markersize=2 ** 4)
-    plt.plot(ub[0, :], ub[1, :], marker=mrk)
-    plt.axis('equal')
-    plt.show()
-
+    # Run Profiler
     cProfile.runctx("func(in1, in2)", globals={"func": cg.polyline_boundary, "in1": xy, "in2": False}, locals={})
 
+    # Print average
+    print(f"average runtime over {test_qty} runs for input size n = {n}: {t_tot/test_qty:8.6f} [s]")
+
+
+    # Visualize
+    mrk = ''
+    plt.plot(xy[0, :], xy[1, :], linewidth=2 ** 3, marker=mrk, markersize=2 ** 4)
+    plt.plot(ub[0, :], ub[1, :], linewidth=2 ** 2, marker=mrk)
+    plt.axis('equal')
+    plt.show()
 
 
 def test_offsets():

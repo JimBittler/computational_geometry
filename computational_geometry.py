@@ -454,8 +454,14 @@ def curvature_numeric(xy: np.ndarray) -> np.ndarray:
     return k
 
 def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
-    # TODO: Preprocess - detect intersections
-    # TODO: Optimize
+    """
+    Find upper/lower boundary (max/min y value) of polyline. Polyline may self intersect, but intersections are not
+    detected and may degrade results. Theoretically O(n^2) complexity, but ~O(n) in practice. O(nlog(n)) possible if
+    segments are stored in sorted binary tree.
+    :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
+    :param upper: Flag if set to True, the upper boundary is found, else the lower boundary is found
+    :return: a [2xm] array of  cartesian coordinate pairs representing vertices of a polyline boundary; m <= 2*(n-1)
+    """
 
     # Set search index for calls to numpy.argpartition(...)
     # Upper: find the last element in a sorted array
@@ -539,7 +545,8 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
         # print(f"s_act: {s_act}")
 
         # Add next segment(s) to T
-        that_idx = np.where(s[0, :] == this_idx)[0].tolist() # can this be speed up by exploiting polyline structure?
+        # • can this be speed up by exploiting polyline structure? either the ith or (i-1)th segment will contain the ith point
+        that_idx = np.where(s[0, :] == this_idx)[0].tolist()
         if len(that_idx) != 0:
             if upper:
                 that_idx.insert(len(that_idx), that_idx.pop(np.argpartition(xy[1, s[1, that_idx]], kth=kth)[kth]))
