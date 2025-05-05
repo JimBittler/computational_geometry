@@ -36,6 +36,21 @@ def main():
         plt.show()
 
 def generate_xy_data(type: int=0, qty: int=128, param: float=1.0) -> np.ndarray:
+    """
+    sample 2d array of Cartesian coordinate pairs, [[x0, y0], [x1, y1], ... , [xn, yn]]
+    :param type: integer flag which selects which type of data to return.
+    0: Epicycloid
+    1: Epitrochoid
+    2: Hypocycloid
+    3: Hypotrochoid
+    4: Determinisitc, but arbitrary curve
+    5: Circle
+    6: Dovetail
+    Else: Diagonal line [0, 0] → [1, 1]
+    :param qty: resolution of parametric curve, if applicable
+    :param param: upperbound of parametric curve domain; lower is always 0
+    :return: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
+    """
     tt_ini = 0
     tt_end = param * 3.14159265
     tt_qty = qty
@@ -228,7 +243,6 @@ def test_polyline_boundary():
     plt.plot(ub[0, :], ub[1, :], linewidth=2 ** 2, marker=mrk)
     plt.axis('equal')
     plt.show()
-
 
 def test_offsets():
     # Generate data

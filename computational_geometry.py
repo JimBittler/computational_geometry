@@ -456,8 +456,8 @@ def curvature_numeric(xy: np.ndarray) -> np.ndarray:
 def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
     """
     Find upper/lower boundary (max/min y value) of polyline. Polyline may self intersect, but intersections are not
-    detected and may degrade results. Theoretically O(n^2) complexity, but ~O(n) in practice. O(nlog(n)) possible if
-    segments are stored in sorted binary tree.
+    detected and may degrade results. Theoretically O(n^2) complexity, but ~O(n) in practice. Theoretical O(nlog(n))
+    complexity possible if segments are stored in sorted binary tree.
     :param xy: a [2xn] array of cartesian coordinate pairs representing vertices of a polyline
     :param upper: Flag if set to True, the upper boundary is found, else the lower boundary is found
     :return: a [2xm] array of  cartesian coordinate pairs representing vertices of a polyline boundary; m <= 2*(n-1)
@@ -509,16 +509,10 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
     # Get the indices that would sort the polyline by increasing x coordinate
     p_idx_sort = np.argsort(xy[0, :])
 
-    # # if segments share initial point, sort by end point
-    # for idx, si in enumerate(s[:, :-1].T):
-    #     if si[0] == s[0, idx + 1]:
-    #         if xy[1, si[1]] > xy[1, s[1, idx + 1]]:
-    #             s[:, idx:idx+2] =  np.flip(s[:, idx:idx+2], axis=1)
-
     # Initialize "status" T; a list of segments which intersect a horizontal sweepline
     # • The sweepline begins as the left most point
     # • Assumes there are no vertical lines
-    # • Use a list because items will be added and removed frequetly
+    # • Use a list because items will be added and removed frequently
     T = []
 
     # Add segments which start at the initial point to T
@@ -539,6 +533,7 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
 
     # Advance the sweepline
     for this_idx in p_idx_sort[1:]:
+        # # Useful debugging routine
         # print("====")
         # print(f"this_idx = {this_idx}")
         # print("status : ", T)
@@ -546,13 +541,20 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
 
         # Add next segment(s) to T
         # • can this be speed up by exploiting polyline structure? either the ith or (i-1)th segment will contain the ith point
-        that_idx = np.where(s[0, :] == this_idx)[0].tolist()
-        if len(that_idx) != 0:
+        new_indices = np.where(s[0, :] == this_idx)[0].tolist()
+        if len(new_indices) != 0:
+            # Condition the new indices
             if upper:
-                that_idx.insert(len(that_idx), that_idx.pop(np.argpartition(xy[1, s[1, that_idx]], kth=kth)[kth]))
+                # Ensure the index of the top most new segment is placed at the end of the list of new segment indicies
+                # This is done to ensure later calls to numpy.argpartition(...) pull the correct segment index
+                new_indices.insert(len(new_indices), new_indices.pop(np.argpartition(xy[1, s[1, new_indices]], kth=kth)[kth]))
             else:
-                that_idx.insert(kth, that_idx.pop(np.argpartition(xy[1, s[1, that_idx]], kth=kth)[kth]))
-            T.extend(that_idx)
+                # Ensure the index of the bottom most new segment is placed at the start of the list of new segment indicies
+                # This is done to ensure later calls to numpy.argpartition(...) pull the correct segment index
+                new_indices.insert(kth, new_indices.pop(np.argpartition(xy[1, s[1, new_indices]], kth=kth)[kth]))
+
+            # Add new segment indices to status
+            T.extend(new_indices)
 
         # Get max value
         # • x := sweepline position
@@ -563,44 +565,34 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
         # Get the index of kth y value of segments in T at x
         kth_idx = np.argpartition(this_y, kth=kth)[kth]
 
-        # if new boundary point is NOT on the active segment
-        if T[kth_idx] != s_act:
-            # Transition point from active segment
-            C.append((xy[0, this_idx], this_y[T.index(s_act)]))
-
-            # Set y value of segment endpoints to +/- infinity
-            this_y[s[1, T] == this_idx] = (2 * kth + 1) * np.inf
-
-            # find new active segment
-            kth_idx = np.argpartition(this_y, kth=kth)[kth]
-
-            # Add new point
-            C.append((xy[0, this_idx], this_y[kth_idx]))
-
-            # Update active segment
-            s_act = T[kth_idx]
-
-        # Else if new boundary is on the active segment, and is an end point
-        elif s[1, T[kth_idx]] == this_idx:
-            # Current point
-            C.append((xy[0, this_idx], this_y[kth_idx]))
-
-            # Set y value of segment endpoints to +/- infinity
-            this_y[s[1, T] == this_idx] = (2 * kth + 1) * np.inf
-
-            # find new active segment
-            kth_idx = np.argpartition(this_y, kth=kth)[kth]
-
-            # Add new point
-            C.append((xy[0, this_idx], this_y[kth_idx]))
-
-            # Update active segment
-            s_act = T[kth_idx]
-
+        # Add a new point to the output curve if either of the following is true:
+        # • the new boundary point is not on the active segment
+        # • the new boundary point is the endpoint of the active segment
         # Else no action required
+        if T[kth_idx] != s_act or s[1, T[kth_idx]] == this_idx:
+            # New boundary point is NOT on the active segment
+            if T[kth_idx] != s_act:
+                # Add a transition point: a point at the current x value and on the active segment
+                C.append((xy[0, this_idx], this_y[T.index(s_act)]))
+            # New boundary is the endpoint of the active segment
+            else:
+                # Add the end point
+                C.append((xy[0, this_idx], this_y[kth_idx]))
+
+            # Set y value of segment endpoints to +/- infinity
+            this_y[s[1, T] == this_idx] = (2 * kth + 1) * np.inf
+
+            # find new active segment
+            kth_idx = np.argpartition(this_y, kth=kth)[kth]
+
+            # Add new point
+            C.append((xy[0, this_idx], this_y[kth_idx]))
+
+            # Update active segment
+            s_act = T[kth_idx]
 
         # Remove segment from T if sweepline is at its endpoint
         T = [si for si in T if s[1, si] != this_idx]
 
-    C = np.array(C, dtype=float).T
-    return C
+    # convert to numpy array and return
+    return np.array(C, dtype=float).T
