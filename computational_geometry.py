@@ -532,7 +532,7 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
     C = [(xy[0, p_idx_sort[0]], xy[1, p_idx_sort[0]])]
 
     # Advance the sweepline
-    for this_idx in p_idx_sort[1:]:
+    for this_idx in p_idx_sort[1:-1]:
         # # Useful debugging routine
         # print("====")
         # print(f"this_idx = {this_idx}")
@@ -579,7 +579,11 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
                 # Add the end point
                 C.append((xy[0, this_idx], this_y[kth_idx]))
 
-            # Set y value of segment endpoints to +/- infinity
+            # Segments with endpoints on the sweepline should not be considered when finding a new active segment
+            # Omit them by setting the y value of their endpoint(s) to +/- infinity
+            # NOTE: There is a special case when the sweepline is at right most point of the polyline
+            # upper == TRUE;  kth = -1 → -inf
+            # upper == False; kth =  0 → +inf
             this_y[s[1, T] == this_idx] = (2 * kth + 1) * np.inf
 
             # find new active segment
@@ -593,6 +597,12 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
 
         # Remove segment from T if sweepline is at its endpoint
         T = [si for si in T if s[1, si] != this_idx]
+
+    # Add final point
+    this_idx = p_idx_sort[-1]
+    new_indices = np.where(s[1, :] == this_idx)[0]
+    this_y = np.partition(xy[1, new_indices], kth=kth)
+    C.append((xy[0, this_idx], this_y[kth]))
 
     # convert to numpy array and return
     return np.array(C, dtype=float).T

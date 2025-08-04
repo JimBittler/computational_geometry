@@ -217,7 +217,7 @@ def test_polyline_boundary():
     n = 2 ** 8
     xy = generate_xy_data(type=1, qty=n, param=1.5)
 
-    test_qty = 100
+    test_qty = 1
     t_tot = 0.0
 
     for _ in range(test_qty):
@@ -236,11 +236,16 @@ def test_polyline_boundary():
     # Print average
     print(f"average runtime over {test_qty} runs for input size n = {n}: {t_tot/test_qty:8.6f} [s]")
 
-
     # Visualize
     mrk = ''
-    plt.plot(xy[0, :], xy[1, :], linewidth=2 ** 3, marker=mrk, markersize=2 ** 4)
-    plt.plot(ub[0, :], ub[1, :], linewidth=2 ** 2, marker=mrk)
+    plt.plot(xy[0, :], xy[1, :], color="tab:blue", linewidth=2 ** 3, marker=mrk, markersize=2 ** 4)
+    plt.plot(xy[0, 0], xy[1, 0], color="tab:blue", linewidth=2 ** 3, marker='o', markersize=2 ** 4, markerfacecolor='none')
+    plt.plot(xy[0, -1], xy[1, -1], color="tab:blue", linewidth=2 ** 3, marker='d', markersize=2 ** 4, markerfacecolor='none')
+
+    plt.plot(ub[0, :], ub[1, :], color="tab:orange", linewidth=2 ** 2, marker=mrk)
+    plt.plot(ub[0, 0], ub[1, 0], color="tab:orange", linewidth=2 ** 3, marker='o', markersize=2 ** 4, markerfacecolor='none')
+    plt.plot(ub[0, -1], ub[1, -1], color="tab:orange", linewidth=2 ** 3, marker='d', markersize=2 ** 4, markerfacecolor='none')
+
     plt.axis('equal')
     plt.show()
 
