@@ -294,6 +294,14 @@ def offset_polar(tr: np.ndarray, dist: float=1.0, miter_threshold: float=np.inf)
     # direction to offset; -1 is inward, toward decreasing r, and +1 is outward, toward increasing r
     dir = np.sign(dist)
 
+    # Extrapolate values to pad start and end of line
+    # --------------------------------
+    tr = np.concatenate(
+        ((tr[:, 0] - (tr[:, 1] - tr[:, 0]))[:, None],
+         tr,
+         (tr[:, -1] + (tr[:, -1] - tr[:, -2]))[:, None]),
+        axis=1)
+
     # Initial Triangle
     # ----------------
     # Side lengths Ai and Bi are known a priori.

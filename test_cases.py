@@ -8,7 +8,7 @@ import computational_geometry as cg
 
 
 def main():
-    test_flag = 5
+    test_flag = 3
 
     if test_flag == 0:
         test_line_segment_y_value()
@@ -271,6 +271,8 @@ def test_offsets():
 
     # Calculate offset
     op = cg.offset_polar(tr, off_dir, miter_threshold=0.5 * np.pi)
+
+    # Map to Cartesian Coordinates
     op = op[1, :] * np.array((np.cos(op[0, :]), np.sin(op[0, :])), dtype=float)
 
     # Stop timer and print
