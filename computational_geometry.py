@@ -1,4 +1,6 @@
 import numpy as np
+import pyclipper
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 # 2d Line segment y value
@@ -410,6 +412,94 @@ def offset_polar(tr: np.ndarray, dist: float=1.0, miter_threshold: float=np.inf)
     oo = np.stack((h, Q), axis=0)
 
     return oo
+
+def offset_via_clipper(xy: np.ndarray = None, offset: float = 1.0, float2int_scale: int = 1000) -> tuple:
+    """
+    Offset a polygon via pyclipper library. Resultant offset curve is oriented counterclockwise, originating at the point which has a negative radial angle and is nearest the origin.
+    Curve orientation has not been verified for robustness and may fail in the presences of degenerate inputs.
+    :param xy: [2xn] Cartesian points of polygon vertices
+    :param offset: distance to offset; negative "deflates", positive "inflates"
+    :param float2int_scale: pyclipper only operates on integers. This value is used to scale floating point numbers. Effectively, this should represent 1e(n) where n is number is significant figures to the right of the decimal point in xy.
+    :return: (xy, tr) tuple containing two [2xm] coordinates arrays Cartesian and polar coordinates. m not necessarily equal to n.
+    """
+    # pyclipper.PyclipperOffset() reference:
+    # [1] https://angusj.com/delphi/clipper/documentation/Docs/Units/ClipperLib/Classes/ClipperOffset/_Body.htm
+    # [2] https://angusj.com/clipper2/Docs/Units/Clipper.Offset/Classes/ClipperOffset/_Body.htm
+
+    # pyclipper can only operate on polygons with integer vertices
+    # scale input and convert to integer
+    xy *= float2int_scale
+
+    # Transpose and convert to list to be comaptible with pyclipper
+    xy = xy.astype('int').T.tolist()
+
+    # subj = (xy.T).tolist()
+
+    # Instantiate pyclipper offset object, which contains offset method
+    pco = pyclipper.PyclipperOffset()
+
+    # Add path to offset, with properties "Join Type square" and "End Type closed polygon"
+    pco.AddPath(xy, pyclipper.JT_SQUARE, pyclipper.ET_CLOSEDPOLYGON)
+
+    # Calculate offset curve
+    sol_xy = pco.Execute(int(offset * float2int_scale))[0]
+
+    # Convert to [2xm] numpy array
+    sol_xy = np.array(sol_xy, dtype=float).T
+
+    # Convert to polar coordinates
+    sol_tr = np.array(
+        (
+            np.arctan2(sol_xy[1, :], sol_xy[0, :]),
+            np.hypot(sol_xy[1, :], sol_xy[0, :])
+        )
+    )
+
+    # From clipper2 [2] docs, "Path order following offsetting very likely won't match path order prior to offsetting"
+    # Reorder solution
+    # 1) solution is composed of n points
+    # 1) solution always has positive orientation; i.e. counterclockwise
+    # 2) Find index point nearest origin
+    # 3) beginning at nearest point found in (2), find first point which lies below the x-axis (negative angle)
+
+    # smallest rho
+    rho_min_idx = np.argmin(sol_tr[1, :])
+
+    # negative phi index
+    phi_mns_idx = np.argwhere(sol_tr[0, rho_min_idx:] < 0)
+
+    # TODO: verify this
+    # If negative phi not found after or including that of the minimum rho, check the solution array from the beginning
+    if phi_mns_idx[0] == 0:
+        phi_mns_idx = np.argwhere(sol_tr[0, :rho_min_idx] < 0)
+
+        # if negative phi is not found, set the index to zero
+        if phi_mns_idx[0] == 0:
+            phi_mns_idx = 0
+        # Else set the index to the first value
+        else:
+            phi_mns_idx = phi_mns_idx[0][0]
+    else:
+        # Else set the index to the first value
+        phi_mns_idx = phi_mns_idx[0][0]
+
+    # Reorder the solution
+    sol_tr = np.concatenate(
+        (
+            sol_tr[:, (rho_min_idx + phi_mns_idx):],
+            sol_tr[:, :(rho_min_idx + phi_mns_idx)]
+        ),
+        axis=1
+    )
+
+    # Cartesian coordinates
+    sol_xy = sol_tr[1, :] * np.array((np.cos(sol_tr[0, :]), np.sin(sol_tr[0, :])))
+
+    # Rescale
+    sol_tr *= (1 / float2int_scale)
+    sol_xy *= (1 / float2int_scale)
+
+    return sol_xy, sol_tr
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Polyline modifications, calculations, comparisons, etc.
