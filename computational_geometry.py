@@ -496,7 +496,7 @@ def offset_via_clipper(xy: np.ndarray = None, offset: float = 1.0, float2int_sca
     sol_xy = sol_tr[1, :] * np.array((np.cos(sol_tr[0, :]), np.sin(sol_tr[0, :])))
 
     # Rescale
-    sol_tr *= (1 / float2int_scale)
+    sol_tr[0, :] *= (1 / float2int_scale)
     sol_xy *= (1 / float2int_scale)
 
     return sol_xy, sol_tr
@@ -704,3 +704,58 @@ def polyline_boundary(xy: np.ndarray, upper: bool=True) -> np.ndarray:
 
     # convert to numpy array and return
     return np.array(C, dtype=float).T
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Circles
+# ----------------------------------------------------------------------------------------------------------------------
+def circle_from_points(p1, p2, p3) -> tuple:
+    """
+    find center and radius of a circle from three points
+    :param p1: (x, y) coordinate pair for first point
+    :param p2: (x, y) coordinate pair for first point
+    :param p3: (x, y) coordinate pair for first point
+    :return: (x, y, r) coordinates of circle center and its radius
+    """
+
+    A = np.array(
+        (
+            (p1[0], p1[1], 1.0),
+            (p2[0], p2[1], 1.0),
+            (p3[0], p3[1], 1.0)
+        )
+    )
+
+    B = -np.array(
+        (
+            (p1[0] ** 2 + p1[1] ** 2),
+            (p2[0] ** 2 + p2[1] ** 2),
+            (p3[0] ** 2 + p3[1] ** 2)
+        )
+    )
+
+    alpha   = A[1, 1] * A[2, 2] - A[2, 1] * A[1, 2]
+    beta    = A[1, 0] * A[2, 2] - A[2, 0] * A[1, 2]
+    gamma   = A[1, 0] * A[2, 1] - A[2, 0] * A[1, 1]
+
+    A_det   = alpha * A[0, 0] - beta * A[0, 1] + gamma * A[0, 2]
+    A_inv   = (1/A_det) * (0.5 * (np.trace(A) ** 2 - np.trace(np.matmul(A, A))) * np.eye(3, 3) - (A * np.trace(A)) + np.matmul(A, A))
+
+    X = np.matmul(A_inv, B)
+
+    x = -0.5 * X[0]
+    y = -0.5 * X[1]
+    r = np.sqrt(x ** 2 + y ** 2 - X[2])
+
+    return x, y, r
+
+def x_val_on_circle(c:tuple=None, r:float=1.0, y_val:float=0) -> tuple:
+    """
+    Find the two possible x-values of a point on a circle given it's y-vale and the circle center and radius
+    :param c: (x, y) coordinate pair of the circle center
+    :param r: radius of circle
+    :param y_val: y-value of the point on the circle
+    :return: (x_val_1, x_val_2) where x_val_1 <= x_val_2
+    """
+    x_val = np.sqrt(r ** 2 - (y_val - c[1]) ** 2)
+    return c[0] - x_val, c[0] + x_val
+
